@@ -152,7 +152,7 @@ private:
 	HANDLE		mIOCPHandle = INVALID_HANDLE_VALUE;
 
 	// 클라이언트 정보 저장 구조체
-	std::vector<ClientInfo> mClientInfos;
+	std::vector<ClientInfo*> mClientInfos;
 
 	// 소켓 버퍼
 	char		mSocketBuf[1024] = { 0, };
@@ -184,7 +184,7 @@ private:
 		{
 			auto client = new ClientInfo;
 			client->Init(i);
-			//mClientInfos.push_back(client);
+			mClientInfos.push_back(client);
 		}
 	}
 
@@ -325,17 +325,17 @@ private:
 
 	ClientInfo* GetClientInfo(const UINT32 sessionIndex)
 	{
-		return &mClientInfos[sessionIndex];
+		return mClientInfos[sessionIndex];
 	}
 
 	// 사용하지 않는 클라이언트 정보 구조체를 반환한다.
 	ClientInfo* GetEmptyClientInfo()
 	{
-		for (auto& client : mClientInfos)
+		for (auto client : mClientInfos)
 		{
-			if (client.IsInvalidSocket())
+			if (client->IsInvalidSocket())
 			{
-				return &client;
+				return client;
 			}
 		}
 
