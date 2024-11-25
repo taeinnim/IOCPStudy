@@ -263,7 +263,23 @@ private:
 			stOverlappedEx* pOverlappedEx = (stOverlappedEx*)lpOverlapped;
 
 			// Overlapped I/O Recv작업 결과 뒤 처리
-			if (pOverlappedEx->m_eOperation == IOOperation::RECV)
+			if (pOverlappedEx->m_eOperation == IOOperation::ACCEPT)
+			{
+				pClientInfo = GetClientInfo(pOverlappedEx->SessionIndex);
+				if (pClientInfo->AcceptCompletion())
+				{
+					// 연결됐을때의 처리
+					OnConnect(pClientInfo->GetIndex());
+
+					//클라이언트 갯수 증가
+					++mClientCnt;
+				}
+				else
+				{
+					CloseSocket(pClientInfo, true);
+				}
+			}
+			else if (pOverlappedEx->m_eOperation == IOOperation::RECV)
 			{
 				OnReceive(pClientInfo->GetIndex(), dwIoSize, pClientInfo->GetRecvBuffer());
 				pClientInfo->BindRecv();
@@ -289,6 +305,9 @@ private:
 
 		while (mIsAccepterRun)
 		{
+			auto curTimeSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+
 			// 접속을 받을 구조체의 인덱스를 얻어온다.
 			ClientInfo* pClientInfo = GetEmptyClientInfo();
 			if (pClientInfo == NULL)
@@ -297,29 +316,9 @@ private:
 				return;
 			}
 
-			// 클라이언트 접속 요청이 들어올 때까지 기다린다.
-			auto newSocket = accept(mListenSocket, (SOCKADDR*)&stClientAddr, &nAddrLen);
-			if (newSocket == INVALID_SOCKET)
-			{
-				continue;
-			}
+			pClientInfo->PostAccept(mListenSocket, curTimeSec);
 
-			// I/O Completion Port객체와 소켓을 연결시킨다. (+ Recv Overlapped I/O작업을 요청)
-			bool bRet = pClientInfo->OnConnect(mIOCPHandle, newSocket);
-			if (false == bRet)
-			{
-				return;
-			}
-
-			// 받았을때의 처리
-			OnConnect(pClientInfo->GetIndex());
-
-			//char clientIP[32] = { 0, };
-			//inet_ntop(AF_INET, &(stClientAddr.sin_addr), clientIP, 32 - 1);
-			//printf("클라이언트 접속 : IP(%s) SOCKET(%d)\n", clientIP, (int)pClientInfo->m_socketClient);
-
-			//클라이언트 갯수 증가
-			++mClientCnt;
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
 		}
 	}
 

@@ -1,6 +1,10 @@
 #pragma once
+#pragma comment(lib, "mswsock.lib")
 
 #include "Define.h"
+
+#include <winsock2.h>
+#include <mswsock.h>
 
 #include <stdio.h>
 #include <mutex>
@@ -11,11 +15,13 @@ public:
 	ClientInfo()
 	{
 		mSock = INVALID_SOCKET;
+		ZeroMemory(&mAcceptOverlappedEx, sizeof(stOverlappedEx));
 		ZeroMemory(&mRecvOverlappedEx, sizeof(stOverlappedEx));
 		//ZeroMemory(&mSendOverlappedEx, sizeof(stOverlappedEx));
 		
+		ZeroMemory(&mAcceptBuf, sizeof(mAcceptBuf));
 		ZeroMemory(&mRecvBuf, sizeof(mRecvBuf));
-		ZeroMemory(&mSendBuf, sizeof(mSendBuf));
+		//ZeroMemory(&mSendBuf, sizeof(mSendBuf));
 	}
 
 	void Init(const UINT32 index)
@@ -72,6 +78,72 @@ public:
 		mSock = INVALID_SOCKET;
 	}
 
+	bool PostAccept(SOCKET listenSock_, const UINT64 curTimeSec_)
+	{
+		printf_s("PostAccept. client Index: %d\n", GetIndex());
+		
+		//mLatestClosedTimeSec = UINT32_MAX;
+
+		mSock = WSASocket(
+			AF_INET, 
+			SOCK_STREAM, 
+			IPPROTO_IP,
+			NULL, 
+			0,
+			WSA_FLAG_OVERLAPPED
+		);
+
+		if (mSock == INVALID_SOCKET)
+		{
+			printf_s("client Socket WSASocket Error : %d\n", GetLastError());
+			return false;
+		}
+
+		ZeroMemory(&mAcceptOverlappedEx, sizeof(stOverlappedEx));
+		
+		DWORD bytes = 0;
+		//DWORD flags = 0;
+		mAcceptOverlappedEx.m_wsaBuf.len = 0;
+		mAcceptOverlappedEx.m_wsaBuf.buf = nullptr;
+		mAcceptOverlappedEx.m_eOperation = IOOperation::ACCEPT;
+		mAcceptOverlappedEx.SessionIndex = mIndex;
+
+		bool bRet = AcceptEx(
+			listenSock_,
+			mSock,
+			mAcceptBuf,
+			0,
+			sizeof(SOCKADDR_IN) + 16,
+			sizeof(SOCKADDR_IN) + 16,
+			&bytes,
+			(LPWSAOVERLAPPED) & (mAcceptOverlappedEx)
+		);
+
+		if (bRet == FALSE)
+		{
+			if (WSAGetLastError() != WSA_IO_PENDING)
+			{
+				printf_s("AcceptEx Error : %d\n", GetLastError());
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	bool AcceptCompletion()
+	{
+		bool bRet = OnConnect(mIOCPHandle, mSock);
+		if (bRet == false)
+		{
+			return false;
+		}
+
+		printf_s("AcceptCompletion : SessionIndex(%d)\n", mIndex);
+
+		return true;
+	}
+
 	// WSARecv Overlapped I/O 작업을 시킨다.
 	bool BindRecv()
 	{
@@ -89,7 +161,7 @@ public:
 			1,
 			&dwRecvNumBytes,
 			&dwFlag,
-			(LPWSAOVERLAPPED) & (mRecvOverlappedEx),
+			(LPWSAOVERLAPPED) &(mRecvOverlappedEx),
 			NULL // null이면 어떻게 되지..? 겹치는 작업이 완료될 때 lpOverlapped의 hEvent 매개 변수가 유효한 이벤트 개체 핸들을 포함하는 경우 신호를 보냅니다.
 		);
 
@@ -145,12 +217,16 @@ public:
 
 private:
 	INT32			mIndex = 0;
+
+	HANDLE			mIOCPHandle = INVALID_HANDLE_VALUE;
 	SOCKET			mSock; // Cliet와 연결되는 소켓
+	stOverlappedEx	mAcceptOverlappedEx;
 	stOverlappedEx	mRecvOverlappedEx; // RECV Overlapped I/O작업을 위한 변수
 	//stOverlappedEx	mSendOverlappedEx; // SEND Overlapped I/O작업을 위한 변수
 
+	char			mAcceptBuf[MAX_SOCKBUF];
 	char			mRecvBuf[MAX_SOCKBUF]; // 데이터 버퍼
-	char			mSendBuf[MAX_SOCKBUF]; // 데이터 버퍼
+	//char			mSendBuf[MAX_SOCKBUF]; // 데이터 버퍼
 
 	std::mutex mSendLock;
 
